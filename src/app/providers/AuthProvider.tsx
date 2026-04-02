@@ -26,6 +26,9 @@ const AuthContext = React.createContext<AuthContextValue | null>(null);
 
 const DEMO_ACCOUNTS_KEY = 'impact-golf-demo-accounts';
 const DEMO_SESSION_KEY = 'impact-golf-demo-session';
+const ADMIN_EMAILS = new Set([
+  'utkarshkumarsingh558@gmail.com',
+]);
 
 type DemoAccount = {
   id: string;
@@ -37,6 +40,10 @@ type DemoAccount = {
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+function resolveRole(email: string, fallback: UserRole = 'member'): UserRole {
+  return ADMIN_EMAILS.has(normalizeEmail(email)) ? 'admin' : fallback;
 }
 
 async function hashPassword(password: string) {
@@ -79,7 +86,7 @@ function getDemoSessionUser(): AppUser | null {
     id: account.id,
     email: account.email,
     fullName: account.fullName,
-    role: account.role,
+    role: resolveRole(account.email, account.role),
   };
 }
 
@@ -92,7 +99,7 @@ async function mapSupabaseSession(session: Session | null): Promise<AppUser | nu
     id: session.user.id,
     email: session.user.email ?? '',
     fullName: (session.user.user_metadata.full_name as string | undefined) ?? 'Member',
-    role: ((session.user.user_metadata.role as UserRole | undefined) ?? 'member'),
+    role: resolveRole(session.user.email ?? '', (session.user.user_metadata.role as UserRole | undefined) ?? 'member'),
   };
 
   const { data, error } = await supabase
@@ -109,7 +116,7 @@ async function mapSupabaseSession(session: Session | null): Promise<AppUser | nu
     id: data.id,
     email: data.email,
     fullName: data.full_name,
-    role: data.role,
+    role: resolveRole(data.email, data.role),
   };
 }
 
@@ -182,7 +189,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           id: account.id,
           email: account.email,
           fullName: account.fullName,
-          role: account.role,
+          role: resolveRole(account.email, account.role),
         });
         return { ok: true };
       }
@@ -227,7 +234,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email,
           fullName: input.fullName.trim(),
           passwordHash: await hashPassword(input.password),
-          role: 'member',
+          role: resolveRole(email, 'member'),
         };
 
         saveDemoAccounts([...accounts, account]);
@@ -236,7 +243,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           id: account.id,
           email: account.email,
           fullName: account.fullName,
-          role: account.role,
+          role: resolveRole(account.email, account.role),
         });
 
         void sendNotification({ kind: 'welcome', userId: account.id }).catch(() => undefined);
@@ -254,7 +261,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         options: {
           data: {
             full_name: input.fullName.trim(),
-            role: 'member',
+            role: resolveRole(input.email, 'member'),
           },
         },
       });
