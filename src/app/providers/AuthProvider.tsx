@@ -90,10 +90,34 @@ function getDemoSessionUser(): AppUser | null {
   };
 }
 
+async function ensureSupabaseProfile(session: Session | null) {
+  if (!session?.user || !supabase) {
+    return;
+  }
+
+  const email = session.user.email ?? '';
+  const fullName = (session.user.user_metadata.full_name as string | undefined)?.trim() || 'Member';
+  const role = resolveRole(email, (session.user.user_metadata.role as UserRole | undefined) ?? 'member');
+
+  await supabase
+    .from('profiles')
+    .upsert(
+      {
+        id: session.user.id,
+        email,
+        full_name: fullName,
+        role,
+      },
+      { onConflict: 'id' },
+    );
+}
+
 async function mapSupabaseSession(session: Session | null): Promise<AppUser | null> {
   if (!session?.user || !supabase) {
     return null;
   }
+
+  await ensureSupabaseProfile(session);
 
   const fallbackUser: AppUser = {
     id: session.user.id,
@@ -207,6 +231,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, message: error.message };
       }
 
+      const { data: sessionData } = await supabase.auth.getSession();
+      await ensureSupabaseProfile(sessionData.session);
+
       return { ok: true };
     },
     async signUp(input) {
@@ -255,7 +282,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, message: 'Supabase is not configured.' };
       }
 
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: normalizeEmail(input.email),
         password: input.password,
         options: {
@@ -270,8 +297,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, message: error.message };
       }
 
-      const { data: sessionData } = await supabase.auth.getSession();
-      const nextUserId = sessionData.session?.user?.id;
+      await ensureSupabaseProfile(data.session ?? null);
+
+      const nextUserId = data.user?.id ?? data.session?.user?.id ?? null;
       if (nextUserId) {
         void sendNotification({ kind: 'welcome', userId: nextUserId }).catch(() => undefined);
       }
